@@ -206,13 +206,24 @@ export class BloomPlayerControls extends React.Component<
         // careful, we can intercept clicks on the forward/back buttons.
         player.addEventListener("click", event => {
             const target = event.target as Element;
-            if (target && target.classList.contains("slick-arrow")) {
+            if (target && target.classList.contains("slick-arrow") || this.inSmartPage(target)) {
                 return; // don't interfere with these clicks!
             }
             this.setState({paused: !this.state.paused});
             event.preventDefault();
             event.stopPropagation();
         }, true);
+    }
+
+    private inSmartPage(target: Element) : boolean {
+        let test: Element | null = target;
+        while (test) {
+            if (test.classList.contains("bloom-smart-page")) {
+                return true;
+            }
+            test = test.parentElement;
+        }
+        return false;
     }
 }
 
