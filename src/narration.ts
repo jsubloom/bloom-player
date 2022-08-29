@@ -3,8 +3,11 @@ import { BloomPlayerCore, PlaybackMode } from "./bloom-player-core";
 import { sortAudioElements, ISetHighlightParams } from "./narrationUtils";
 import { SwiperInstance } from "react-id-swiper";
 import { logSound } from "./videoRecordingSupport";
+import { nodeName } from "jquery";
 
 const kSegmentClass = "bloom-highlightSegment";
+//const kHighlightDisabledClass = "bloom-highlightDisabled";
+const kHighlightDisabledClass = "disableHighlight";
 var durationOfPagesWithoutNarration = 3.0; // seconds
 export function setDurationOfPagesWithoutNarration(d: number) {
     durationOfPagesWithoutNarration = d;
@@ -89,6 +92,8 @@ export default class Narration {
         // (Deals with the case where you are on a page with audio, switch to a page without audio, then switch back to original page)
         ++this.currentAudioSessionNum;
 
+        this.fixMultipleSpaces();
+
         // Sorted into the order we want to play them, then reversed so we
         // can more conveniently pop the next one to play from the end of the stack.
         this.elementsToPlayConsecutivelyStack = sortAudioElements(
@@ -117,6 +122,200 @@ export default class Narration {
         this.playCurrentInternal();
         return;
     }
+
+    private fixMultipleSpaces() {
+        const audioElements = this.getPageAudioElements();
+        audioElements.forEach(audioElement => {
+            const matches = this.findAll("span", audioElement, true);
+            matches.forEach(htmlElement => {
+                console.log("OutHtml: " + htmlElement.outerHTML);
+                this.fixMultiSpacesInNode(htmlElement);
+            });
+
+            console.log(
+                "Final audioElement.outerHTML=" + audioElement.outerHTML
+            );
+        });
+    }
+
+    private fixMultiSpacesInNode(node: Node, depth: number = 0) {
+        // TODO: let's start with the spans...
+        console.log(
+            `[Depth=${depth}] Processing: "${
+                node.nodeType === node.TEXT_NODE
+                    ? node.nodeValue
+                    : (node as Element).outerHTML
+            }"`
+        );
+        if (
+            node.nodeType === Node.ELEMENT_NODE &&
+            (node as Element).classList.contains(kHighlightDisabledClass)
+        ) {
+            // No need to process bloom-highlightDisabled elements (they've already been processed)
+            console.log("Skipping because bloom-highlightDisabled detected.");
+            return;
+        }
+        if (node.nodeType === Node.TEXT_NODE) {
+            const nodesToAppend = this.fixMultiSpaceInTextNode(node);
+            if (node.parentNode && nodesToAppend) {
+                // TODO: This needs work.
+                console.log("nodesToAppend.length: " + nodesToAppend.length);
+                let elementToInsertBefore = node;
+                nodesToAppend.reverse();
+                for (let i = 0; i < nodesToAppend.length; ++i) {
+                    const nodeToInsert = nodesToAppend[i];
+                    node.parentNode.insertBefore(
+                        nodeToInsert,
+                        elementToInsertBefore
+                    );
+                    elementToInsertBefore = nodeToInsert;
+                }
+                const parentElement = node.parentElement;
+                node.parentNode.removeChild(node);
+                console.log("New HTML: " + parentElement?.innerHTML);
+            }
+            return;
+        }
+
+        // NOTE: This array is being mutated even as we traverse it. Scary!
+        // ENHANCE: Right now we are robust enough to handle it...
+        // but it'd waste less processing time if we could skip past them.
+        node.childNodes.forEach(childNode => {
+            this.fixMultiSpacesInNode(childNode, depth + 1);
+        });
+    }
+
+    // TODO: Rename function
+    private fixMultiSpaceInTextNode(textNode: Node) {
+        if (textNode.nodeType !== Node.TEXT_NODE) {
+            throw new Error(
+                "Invalid argument to fixMultiSpaceInTextNode: node must be a TextNode"
+            );
+        }
+
+        if (!textNode.nodeValue) {
+            return undefined;
+        }
+
+        console.log('Analyzing "' + textNode.nodeValue + '"');
+
+        // Note: It probably contains a bunch of &nbsp; followed by a single normal space at the end.
+        const matches = Array.from(
+            textNode.nodeValue.matchAll(/[ \u00a0]{3,}/g)
+        );
+
+        const nodesToAppend: Node[] = [];
+        for (let i = 0; i < matches.length; ++i) {
+            const match = matches[i];
+            if (match.index === undefined) {
+                continue;
+            }
+
+            // TODO: Delete this log
+            console.log(
+                `Found "${match[0]}" start=${match.index} end=${match.index! +
+                    match[0].length}.`
+            );
+
+            const startIndex = match.index;
+            const endIndex = startIndex + match[0].length;
+
+            const beginningSection = textNode.nodeValue.slice(0, startIndex);
+            console.log("beginningSection: " + beginningSection);
+            nodesToAppend.push(document.createTextNode(beginningSection));
+
+            const newSpan = document.createElement("span");
+            newSpan.classList.add(kHighlightDisabledClass);
+            newSpan.appendChild(document.createTextNode(match[0]));
+            console.log("newSpan: " + newSpan.outerHTML);
+            nodesToAppend.push(newSpan);
+
+            if (i === matches.length - 1) {
+                const endSection = textNode.nodeValue.slice(endIndex);
+                if (endSection) {
+                    // TODO: How to test this section? Current test case won't cover it.
+                    console.log(`endSection "${endSection}"`);
+                    nodesToAppend.push(document.createTextNode(endSection));
+                }
+            }
+        }
+
+        return nodesToAppend;
+    }
+
+    // private fixMultiSpaceInTextNode(textNode: Node) {
+    //     if (textNode.nodeType !== Node.TEXT_NODE) {
+    //         throw new Error(
+    //             "Invalid argument to fixMultiSpaceInTextNode: node must be a TextNode"
+    //         );
+    //     }
+
+    //     if (!textNode.nodeValue) {
+    //         return undefined;
+    //     }
+
+    //     const multiSpacePattern = "   ";
+    //     let startIndexOfFind = 0;
+
+    //     console.log('Analyzing "' + textNode.nodeValue + '"');
+    //     let startIndexOfMultiSpace = textNode.nodeValue.search(/[ \u00a0]{3,}/);
+
+    //     console.log("StartIndexOfMultiSpace: " + startIndexOfMultiSpace);
+
+    //     if (startIndexOfMultiSpace < 0) {
+    //         return undefined;
+    //     }
+
+    //     const nodesToAppend: Node[] = [];
+    //     while (startIndexOfMultiSpace >= 0) {
+    //         if (startIndexOfMultiSpace < 0) {
+    //             break;
+    //         }
+    //         let endIndexOfMultiSpace =
+    //             startIndexOfMultiSpace + multiSpacePattern.length;
+    //         while (
+    //             endIndexOfMultiSpace < textNode.nodeValue.length &&
+    //             textNode.nodeValue.charAt(endIndexOfMultiSpace) === " "
+    //         ) {
+    //             ++endIndexOfMultiSpace;
+    //         }
+
+    //         const beginningSection = textNode.nodeValue.slice(
+    //             0,
+    //             startIndexOfMultiSpace
+    //         );
+    //         console.log("beginningSection: " + beginningSection);
+    //         nodesToAppend.push(document.createTextNode(beginningSection));
+
+    //         const newSpan = document.createElement("span");
+    //         newSpan.classList.add("bloom-highlightDisabled");
+    //         const multiSpaceRegion = textNode.nodeValue.slice(
+    //             startIndexOfMultiSpace,
+    //             endIndexOfMultiSpace
+    //         );
+    //         newSpan.appendChild(document.createTextNode(multiSpaceRegion));
+    //         console.log("newSpan: " + newSpan.outerHTML);
+    //         nodesToAppend.push(newSpan);
+    //         startIndexOfFind = endIndexOfMultiSpace + 1;
+
+    //         if (endIndexOfMultiSpace >= textNode.nodeValue.length) {
+    //             break;
+    //         }
+
+    //         startIndexOfMultiSpace =
+    //             textNode.nodeValue
+    //                 .slice(startIndexOfFind)
+    //                 .search(/[ \u00a0]{3,}/) + startIndexOfFind;
+    //     }
+
+    //     if (startIndexOfFind < textNode.nodeValue.length) {
+    //         const lastRegion = textNode.nodeValue.slice(startIndexOfFind);
+    //         console.log("lastRegion: " + lastRegion);
+    //         nodesToAppend.push(document.createTextNode(lastRegion));
+    //     }
+
+    //     return nodesToAppend;
+    // }
 
     private playCurrentInternal() {
         if (BloomPlayerCore.currentPlaybackMode === PlaybackMode.AudioPlaying) {
