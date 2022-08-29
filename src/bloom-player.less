@@ -64,12 +64,12 @@ span.ui-audioCurrent:not(.disableHighlight),
 div.ui-audioCurrent:not(.disableHighlight) p {
     background-color: @audioHighlighting;
 }
-// TODO: initial doesn't work, I guess it gets it from its parent, which is a highlighted thing.
-// transparent doesn't work, you see through to the span behind it.
-// white doesn't work perfectly... there's some border issues to work out. and what if the background isn't white!
-//
-// Maybe you need to make them sibling elements, instead of children.
-span.disableHighlight {
+
+.ui-audioCurrent .enableHighlight {
+    background-color: @audioHighlighting;
+}
+
+.disableHighlight {
     background-color: initial !important;
 }
 

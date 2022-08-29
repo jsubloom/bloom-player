@@ -92,6 +92,7 @@ export default class Narration {
         // (Deals with the case where you are on a page with audio, switch to a page without audio, then switch back to original page)
         ++this.currentAudioSessionNum;
 
+        // TODO: I think there is a timing problem between this and setting the audioCurrent if in Sentence/Sentence mode.
         this.fixMultipleSpaces();
 
         // Sorted into the order we want to play them, then reversed so we
@@ -157,7 +158,7 @@ export default class Narration {
         }
         if (node.nodeType === Node.TEXT_NODE) {
             const nodesToAppend = this.fixMultiSpaceInTextNode(node);
-            if (node.parentNode && nodesToAppend) {
+            if (node.parentNode && nodesToAppend && nodesToAppend.length > 0) {
                 // TODO: This needs work.
                 console.log("nodesToAppend.length: " + nodesToAppend.length);
                 let elementToInsertBefore = node;
@@ -172,15 +173,15 @@ export default class Narration {
                 }
                 const parentElement = node.parentElement;
                 node.parentNode.removeChild(node);
+                parentElement?.classList.add("disableHighlight");
                 console.log("New HTML: " + parentElement?.innerHTML);
             }
             return;
         }
 
-        // NOTE: This array is being mutated even as we traverse it. Scary!
-        // ENHANCE: Right now we are robust enough to handle it...
-        // but it'd waste less processing time if we could skip past them.
-        node.childNodes.forEach(childNode => {
+        // Make a copy because node.childNodes is being mutated
+        const childNodesCopy = Array.from(node.childNodes);
+        childNodesCopy.forEach(childNode => {
             this.fixMultiSpacesInNode(childNode, depth + 1);
         });
     }
@@ -205,6 +206,15 @@ export default class Narration {
         );
 
         const nodesToAppend: Node[] = [];
+        if (matches.length === 0) {
+            console.log("No matches");
+            const newSpan0 = document.createElement("span");
+            newSpan0.classList.add("enableHighlight");
+            newSpan0.appendChild(document.createTextNode(textNode.nodeValue));
+            nodesToAppend.push(newSpan0);
+            return nodesToAppend;
+        }
+
         for (let i = 0; i < matches.length; ++i) {
             const match = matches[i];
             if (match.index === undefined) {
@@ -222,7 +232,10 @@ export default class Narration {
 
             const beginningSection = textNode.nodeValue.slice(0, startIndex);
             console.log("beginningSection: " + beginningSection);
-            nodesToAppend.push(document.createTextNode(beginningSection));
+            const newSpan0 = document.createElement("span");
+            newSpan0.classList.add("enableHighlight");
+            newSpan0.appendChild(document.createTextNode(beginningSection));
+            nodesToAppend.push(newSpan0);
 
             const newSpan = document.createElement("span");
             newSpan.classList.add(kHighlightDisabledClass);
@@ -236,86 +249,16 @@ export default class Narration {
                     // TODO: How to test this section? Current test case won't cover it.
                     console.log(`endSection "${endSection}"`);
                     nodesToAppend.push(document.createTextNode(endSection));
+                    const newSpan2 = document.createElement("span");
+                    newSpan2.classList.add("enableHighlight");
+                    newSpan2.appendChild(document.createTextNode(endSection));
+                    nodesToAppend.push(newSpan2);
                 }
             }
         }
 
         return nodesToAppend;
     }
-
-    // private fixMultiSpaceInTextNode(textNode: Node) {
-    //     if (textNode.nodeType !== Node.TEXT_NODE) {
-    //         throw new Error(
-    //             "Invalid argument to fixMultiSpaceInTextNode: node must be a TextNode"
-    //         );
-    //     }
-
-    //     if (!textNode.nodeValue) {
-    //         return undefined;
-    //     }
-
-    //     const multiSpacePattern = "   ";
-    //     let startIndexOfFind = 0;
-
-    //     console.log('Analyzing "' + textNode.nodeValue + '"');
-    //     let startIndexOfMultiSpace = textNode.nodeValue.search(/[ \u00a0]{3,}/);
-
-    //     console.log("StartIndexOfMultiSpace: " + startIndexOfMultiSpace);
-
-    //     if (startIndexOfMultiSpace < 0) {
-    //         return undefined;
-    //     }
-
-    //     const nodesToAppend: Node[] = [];
-    //     while (startIndexOfMultiSpace >= 0) {
-    //         if (startIndexOfMultiSpace < 0) {
-    //             break;
-    //         }
-    //         let endIndexOfMultiSpace =
-    //             startIndexOfMultiSpace + multiSpacePattern.length;
-    //         while (
-    //             endIndexOfMultiSpace < textNode.nodeValue.length &&
-    //             textNode.nodeValue.charAt(endIndexOfMultiSpace) === " "
-    //         ) {
-    //             ++endIndexOfMultiSpace;
-    //         }
-
-    //         const beginningSection = textNode.nodeValue.slice(
-    //             0,
-    //             startIndexOfMultiSpace
-    //         );
-    //         console.log("beginningSection: " + beginningSection);
-    //         nodesToAppend.push(document.createTextNode(beginningSection));
-
-    //         const newSpan = document.createElement("span");
-    //         newSpan.classList.add("bloom-highlightDisabled");
-    //         const multiSpaceRegion = textNode.nodeValue.slice(
-    //             startIndexOfMultiSpace,
-    //             endIndexOfMultiSpace
-    //         );
-    //         newSpan.appendChild(document.createTextNode(multiSpaceRegion));
-    //         console.log("newSpan: " + newSpan.outerHTML);
-    //         nodesToAppend.push(newSpan);
-    //         startIndexOfFind = endIndexOfMultiSpace + 1;
-
-    //         if (endIndexOfMultiSpace >= textNode.nodeValue.length) {
-    //             break;
-    //         }
-
-    //         startIndexOfMultiSpace =
-    //             textNode.nodeValue
-    //                 .slice(startIndexOfFind)
-    //                 .search(/[ \u00a0]{3,}/) + startIndexOfFind;
-    //     }
-
-    //     if (startIndexOfFind < textNode.nodeValue.length) {
-    //         const lastRegion = textNode.nodeValue.slice(startIndexOfFind);
-    //         console.log("lastRegion: " + lastRegion);
-    //         nodesToAppend.push(document.createTextNode(lastRegion));
-    //     }
-
-    //     return nodesToAppend;
-    // }
 
     private playCurrentInternal() {
         if (BloomPlayerCore.currentPlaybackMode === PlaybackMode.AudioPlaying) {
